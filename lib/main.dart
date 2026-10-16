@@ -206,63 +206,80 @@ class _MapScreenState extends State<MapScreen> {
         // MAPA
         // ------------------------------------------------
 
-        FlutterMap(
-          mapController: _mapController,
+        
+Stack(
+  children: [
+    FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: currentLocation,
+        initialZoom: 15,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate:
+              "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
+          userAgentPackageName: "com.example.app_ciclistas",
+        ),
 
-          options: MapOptions(
-            initialCenter: currentLocation,
-            initialZoom: 15,
-          ),
-
-          children: [
-
-            TileLayer(
-              urlTemplate:
-                  "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
-
-              userAgentPackageName:
-                  "com.example.app_ciclistas",
-            ),
-
-            // --------------------------------------------
-            // RUTA DE EJEMPLO
-            // --------------------------------------------
-
-            PolylineLayer(
-              polylines: [
-                Polyline(
-                  points: const [
-                    LatLng(4.6100, -74.0830),
-                    LatLng(4.6120, -74.0800),
-                    LatLng(4.6140, -74.0770),
-                    LatLng(4.6160, -74.0750),
-                  ],
-                  strokeWidth: 5,
-                  color: const Color(0xFFD6AF31),
-                ),
+        // RUTA DE EJEMPLO
+        PolylineLayer(
+          polylines: [
+            Polyline(
+              points: const [
+                LatLng(4.6100, -74.0830),
+                LatLng(4.6120, -74.0800),
+                LatLng(4.6140, -74.0770),
+                LatLng(4.6160, -74.0750),
               ],
-            ),
-
-            // --------------------------------------------
-            // UBICACIÓN DEL CICLISTA
-            // --------------------------------------------
-
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: currentLocation,
-                  width: 70,
-                  height: 70,
-                  child: const Icon(
-                    Icons.location_pin,
-                    color: Colors.red,
-                    size: 42,
-                  ),
-                ),
-              ],
+              strokeWidth: 5,
+              color: const Color(0xFFD6AF31),
             ),
           ],
         ),
+
+        // UBICACIÓN DEL CICLISTA
+        MarkerLayer(
+          markers: [
+            Marker(
+              point: currentLocation,
+              width: 70,
+              height: 70,
+              child: const Icon(
+                Icons.location_pin,
+                color: Colors.red,
+                size: 42,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+
+    // BURBUJA FLOTANTE DEL CHAT
+    Positioned(
+      top: 145,
+      right: 15,
+      child: FloatingActionButton(
+        mini: true,
+        heroTag: 'chatCiclistas',
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.green,
+        tooltip: 'Chat de ciclistas',
+        onPressed: () {
+          showDialog(
+            context: context,
+            builder: (dialogContext) {
+              return const CyclistChatDialog();
+            },
+          );
+        },
+        child: const Icon(Icons.chat_bubble_outline),
+      ),
+    ),
+  ],
+),
+
 
         // =================================================
         // BUSCADOR
@@ -2490,3 +2507,106 @@ class StatisticCard extends StatelessWidget {
     );
   }
 } 
+
+
+class CyclistChatDialog extends StatefulWidget {
+  const CyclistChatDialog({super.key});
+
+  @override
+  State<CyclistChatDialog> createState() =>
+      _CyclistChatDialogState();
+}
+
+class _CyclistChatDialogState extends State<CyclistChatDialog> {
+  final TextEditingController _messageController =
+      TextEditingController();
+
+  final List<String> _messages = [];
+
+  void _sendMessage() {
+    final message = _messageController.text.trim();
+
+    if (message.isEmpty) return;
+
+    setState(() {
+      _messages.add(message);
+    });
+
+    _messageController.clear();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Chat de ciclistas'),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 300,
+        child: Column(
+          children: [
+            Expanded(
+              child: _messages.isEmpty
+                  ? const Center(
+                      child: Text(
+                        '¡Hola, ciclista!\nEscribe tu primer mensaje.',
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        return Align(
+                          alignment: Alignment.centerRight,
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(
+                              vertical: 4,
+                            ),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(_messages[index]),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: const InputDecoration(
+                      hintText: 'Escribe un mensaje...',
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _sendMessage,
+                  icon: const Icon(
+                    Icons.send,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
+    );
+  }
+}
