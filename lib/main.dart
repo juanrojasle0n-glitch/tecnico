@@ -7,6 +7,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(const MyApp());
@@ -24,11 +25,14 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Mapa Ciclistas',
+      themeMode: ThemeMode.dark,
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color(0xFFF3F1E8),
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF121714),
         fontFamily: 'Roboto',
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2F6B4F),
+          seedColor: const Color(0xFF4CAF78),
+          brightness: Brightness.dark,
         ),
       ),
       home: const MainScreen(),
@@ -71,8 +75,8 @@ class _MainScreenState extends State<MainScreen> {
 
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFDCE9DF),
+        backgroundColor: const Color(0xFF1B241E),
+        indicatorColor: const Color(0xFF315B43),
 
         onDestinationSelected: (index) {
           setState(() {
@@ -132,6 +136,11 @@ class _MapScreenState extends State<MapScreen> {
     -74.0817,
   );
 
+List<Map<String, dynamic>> _bikeShops = [];
+
+
+bool _loadingBikeShops = false;
+
   @override
   void initState() {
     super.initState();
@@ -186,6 +195,94 @@ class _MapScreenState extends State<MapScreen> {
       );
     });
   }
+
+Future<void> findBikeShops() async {
+  if (_loadingBikeShops) return;
+
+  setState(() {
+    _loadingBikeShops = true;
+  });
+
+  try {
+    final lat = currentLocation.latitude;
+    final lon = currentLocation.longitude;
+
+    final query = '''
+[out:json][timeout:8];
+node["shop"="bicycle"](around:1000,$lat,$lon);
+out 5;
+''';
+
+    final uri = Uri.https(
+    'overpass.kumi.systems',
+    '/api/interpreter',
+  );
+
+debugPrint('Probando conexión con Overpass...');
+
+  final response = await http
+      .post(
+        uri,
+        headers: {
+          'User-Agent': 'AppCiclistas/1.0',
+          'Accept': 'application/json',
+        },
+        body: {
+          'data': query,
+        },
+      )
+      .timeout(const Duration(seconds: 20));
+      debugPrint('Respuesta de Overpass: ${response.statusCode}');
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Error HTTP ${response.statusCode}: ${response.body}'
+        );
+    }
+
+    final data =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    final elements = data['elements'] as List<dynamic>;
+    final shops = <Map<String, dynamic>>[];
+
+    for (final element in elements) {
+      final tags =
+          element['tags'] as Map<String, dynamic>? ?? {};
+      final center = element['center'] as Map<String, dynamic>?;
+
+      final latShop = element['lat'] ?? center?['lat'];
+      final lonShop = element['lon'] ?? center?['lon'];
+
+      if (latShop == null || lonShop == null) continue;
+
+      shops.add({
+        'name': tags['name'] ?? 'Taller de bicicletas',
+        'lat': (latShop as num).toDouble(),
+        'lon': (lonShop as num).toDouble(),
+      });
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _bikeShops = shops;
+    });
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se detectan talleres de bicicletas cercanos. Intenta más tarde.'),
+        ),
+      );
+    }
+  } finally {
+    if (mounted) {
+      setState(() {
+        _loadingBikeShops = false;
+      });
+    }
+  }
+}
 
   @override
   void dispose() {
@@ -252,7 +349,26 @@ Stack(
               ),
             ),
           ],
-        ),
+        ), MarkerLayer(
+            markers: _bikeShops.map((shop) {
+              return Marker(
+                point: LatLng(
+                  shop['lat'] as double,
+                  shop['lon'] as double,
+                ),
+                width: 50,
+                height: 50,
+                child: Tooltip(
+                  message: shop['name'] as String,
+                  child: const Icon(
+                    Icons.pedal_bike,
+                    color: Color(0xFF4CAF78),
+                    size: 35,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
       ],
     ),
 
@@ -263,8 +379,8 @@ Stack(
       child: FloatingActionButton(
         mini: true,
         heroTag: 'chatCiclistas',
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.green,
+        backgroundColor: const Color(0xFF315B43),
+        foregroundColor: Colors.white,
         tooltip: 'Chat de ciclistas',
         onPressed: () {
           showDialog(
@@ -276,7 +392,21 @@ Stack(
         },
         child: const Icon(Icons.chat_bubble_outline),
       ),
-    ),
+    ),Positioned(
+        top: 195,
+        right: 15,
+        child: FloatingActionButton(
+          mini: true,
+          heroTag: 'buscarTalleres',
+          backgroundColor: const Color(0xFF315B43),
+          foregroundColor: Colors.white,
+          tooltip: 'Buscar talleres de bicicletas',
+          onPressed: () {
+            findBikeShops();
+          },
+          child: const Icon(Icons.pedal_bike),
+        ),
+      ),
   ],
 ),
 
@@ -306,7 +436,7 @@ Stack(
                 ),
 
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: const Color(0xFF1B241E),
                   borderRadius: BorderRadius.circular(16),
                 ),
 
@@ -349,8 +479,12 @@ Stack(
             ),
 
             decoration: BoxDecoration(
-              color: const Color(0xFF202522),
-              borderRadius: BorderRadius.circular(20),
+              color: const Color(0xFF1B241E),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFF315B43),
+                width: 1.2,
+              ),
             ),
 
             child: const Text(
@@ -368,7 +502,7 @@ Stack(
         // LEYENDA
         // =================================================
 
-        Positioned(
+/*        Positioned(
           top: 165,
           left: 16,
 
@@ -376,8 +510,12 @@ Stack(
             padding: const EdgeInsets.all(10),
 
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFF1B241E),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF315B43),
+                width: 1.2,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black12,
@@ -413,6 +551,7 @@ Stack(
             ),
           ),
         ),
+*/
 
         // =================================================
         // TARJETA DE RUTA
@@ -427,7 +566,7 @@ Stack(
             padding: const EdgeInsets.all(18),
 
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFF1B241E),
               borderRadius: BorderRadius.circular(20),
 
               boxShadow: const [
@@ -458,6 +597,7 @@ Stack(
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
+                           color: Color(0xFFE4EDE6),
                         ),
                       ),
 
@@ -485,7 +625,7 @@ Stack(
                   ),
 
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE3EEE8),
+                    color: const Color(0xFF293B30),
                     borderRadius: BorderRadius.circular(10),
                   ),
 
@@ -932,7 +1072,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                           const EdgeInsets.all(20),
 
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: const Color(0xFF1B241E),
                         borderRadius:
                             BorderRadius.circular(16),
                       ),
@@ -1023,12 +1163,11 @@ class _RoutesScreenState extends State<RoutesScreen> {
 
                       style:
                           OutlinedButton.styleFrom(
-                        foregroundColor:
-                            const Color(0xFF202522),
-
+                        foregroundColor: Colors.white,
+                        backgroundColor: const Color(0xFF315B43),
                         side: const BorderSide(
-                          color:
-                              Color(0xFF202522),
+                          color: Color(0xFF4CAF78),
+                          width: 1.5,
                         ),
 
                         shape:
@@ -1075,7 +1214,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                         const Color(0xFF34745A),
 
                     riskBackground:
-                        const Color(0xFFE3EEE8),
+                        const Color(0xFF293B30),
                   ),
 
                   const SizedBox(height: 12),
@@ -1097,7 +1236,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                         const Color(0xFFB88A16),
 
                     riskBackground:
-                        const Color(0xFFFFF1C7),
+                        const Color(0xFF293B30),
                   ),
 
                   const SizedBox(height: 12),
@@ -1119,7 +1258,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                         const Color(0xFF34745A),
 
                     riskBackground:
-                        const Color(0xFFE3EEE8),
+                        const Color(0xFF293B30),
                   ),
 
                   const SizedBox(height: 20),
@@ -1161,7 +1300,7 @@ class MyRouteCard extends StatelessWidget {
           const EdgeInsets.all(16),
 
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF1B241E),
         borderRadius:
             BorderRadius.circular(18),
 
@@ -1330,7 +1469,7 @@ class RecommendedRouteCard
           const EdgeInsets.all(16),
 
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF1B241E),
         borderRadius:
             BorderRadius.circular(18),
 
@@ -1359,6 +1498,7 @@ class RecommendedRouteCard
                     fontSize: 17,
                     fontWeight:
                         FontWeight.bold,
+                        color: Color(0xFFE4EDE6),
                   ),
                 ),
               ),
@@ -1452,7 +1592,7 @@ class RecommendedRouteCard
               style:
                   ElevatedButton.styleFrom(
                 backgroundColor:
-                    const Color(0xFF202522),
+                     const Color(0xFF315B43),
 
                 foregroundColor:
                     Colors.white,
@@ -2185,7 +2325,7 @@ class AlertCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
 
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF1B241E),
         borderRadius: BorderRadius.circular(16),
 
         boxShadow: const [
@@ -2218,6 +2358,7 @@ class AlertCard extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
+                    color: Color(0xFFE4EDE6),
                   ),
                 ),
 
@@ -2309,7 +2450,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.all(20),
 
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: const Color(0xFF1B241E),
                 borderRadius: BorderRadius.circular(18),
               ),
 
@@ -2569,10 +2710,15 @@ class _CyclistChatDialogState extends State<CyclistChatDialog> {
                             ),
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: Colors.green.shade100,
+                              color: const Color(0xFF315B43),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Text(_messages[index]),
+                            child: Text(
+                              _messages[index],
+                              style: const TextStyle(
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
                         );
                       },
